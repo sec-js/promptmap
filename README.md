@@ -10,7 +10,11 @@
 /  |-----| |_|                |_|                 |_|  |_____|    
 ```
 
-promptmap2 is a vulnerability scanning tool that automatically tests prompt injection and similar attacks on your custom LLM applications. It analyzes your LLM system prompts, runs them, and sends attack prompts to them. By checking the response, it can determine if the attack was successful or not. (From the traditional application security perspective, it's a combination of SAST and DAST. It does dynamic analysis, but it needs to see your code.)
+promptmap2 is a an automated prompt injection scanner for custom LLM applications. It supports two testing modes:
+
+- **White-box testing:** Provide your system prompts and the model information. promptmap2 runs the target LLM itself and tests it.
+
+- **Black-box testing:** Point promptmap2 at an external HTTP endpoint. It sends attack prompts over HTTPand inspects the returned outputs.
 
 It operates using a dual-LLM architecture:
 
@@ -28,7 +32,6 @@ It includes comprehensive test rules across multiple categories including prompt
 
 ## Features
 
-- **Dual-LLM Architecture**: Separate target and controller LLMs for accurate vulnerability detection
 - **Multiple LLM Provider Support**:
   - OpenAI GPT models
   - Anthropic Claude models
@@ -37,8 +40,8 @@ It includes comprehensive test rules across multiple categories including prompt
   - Open source models via Ollama (Deepseek, Llama, Mistral, Qwen, etc.)
 - **Comprehensive Test Rules**: 50+ pre-built rules across 6 categories
 - **Flexible Evaluation**: Condition-based pass/fail criteria for each test
-- **Customizable**: YAML-based rules with pass/fail conditions
-- **Multiple Output Formats**: Terminal display and JSON export
+- **Customizable Rules**: YAML-based rules with pass/fail conditions
+- **External HTTP Targets**: Point black-box scans at any endpoint via lightweight YAML configs
 
 ![promptmap2 in action](screenshots/promptmap.png)
 
@@ -60,18 +63,11 @@ pip install -r requirements.txt
 Set the appropriate API key for your chosen provider.
 
 ```bash
-# For OpenAI models
 export OPENAI_API_KEY="your-openai-key"
-
-# For Anthropic models
-export ANTHROPIC_API_KEY="your-anthropic-key"
-
-# For Google Gemini models
-export GOOGLE_API_KEY="your-gemini-key"
-
-# For XAI Grok models
-export XAI_API_KEY="your-xai-grok-key"
 ```
+
+Other supported providers use `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, and `XAI_API_KEY`.
+
 ### Ollama Installation
 
 If you want to use local models, you need to install Ollama.
@@ -79,6 +75,8 @@ If you want to use local models, you need to install Ollama.
 Navigate to the [Ollama's Download page](https://ollama.ai/download) and follow the installation instructions.
 
 ## Usage
+
+## White-Box Testing
 
 You need to provide your system prompts file. Default file is `system-prompts.txt`. You can specify your own file with `--prompts` flag. An example file is provided in the repository.
 
@@ -89,28 +87,15 @@ You need to provide your system prompts file. Default file is `system-prompts.tx
 python3 promptmap2.py --target-model gpt-3.5-turbo --target-model-type openai
 ```
 
-2. Testing Anthropic models:
-```bash
-python3 promptmap2.py --target-model claude-3-opus-20240229 --target-model-type anthropic
-```
+Anthropic, Google, and XAI providers follow the same pattern: choose the right model name and set `--target-model-type` to `anthropic`, `google`, or `xai`.
 
-3. Testing Google Gemini models:
-```bash
-python3 promptmap2.py --target-model gemini-2.5-pro --target-model-type google
-```
-
-4. Testing XAI Grok models:
-```bash
-python3 promptmap2.py --target-model grok-beta --target-model-type xai
-```
-
-5. Testing local models via Ollama:
+2. Testing local models via Ollama:
 ```bash
 python3 promptmap2.py --target-model "llama2:7b" --target-model-type ollama
 # If the model is not installed, promptmap will ask you to download it. If you want to download it automatically, you can use `-y` flag.
 ```
 
-6. Testing with custom Ollama server location:
+3. Testing with custom Ollama server location:
 ```bash
 # By default, promptmap2 connects to Ollama at http://localhost:11434
 # You can specify a custom URL if your Ollama server is running elsewhere
@@ -123,9 +108,10 @@ By default, the same model is used as both target and controller.
 
 > [!IMPORTANT]  
 > For the controller model, it's highly recommended to use one of these powerful models for accurate evaluation:
-> - OpenAI GPT-4o
+> - OpenAI GPT-5
 > - Google Gemini 2.5 Pro
 > - Anthropic Claude 4 Sonnet
+> - gpt-oss:20b (via Ollama)
 > 
 > Weaker models may not analyze results accurately and could lead to false positives or negatives.
 
@@ -138,9 +124,59 @@ python3 promptmap2.py --target-model gpt-3.5-turbo --target-model-type openai \
 python3 promptmap2.py --target-model llama2:7b --target-model-type ollama \
   --controller-model claude-4-opus-20240229 --controller-model-type anthropic
 
-# Use Gemini 2.5 Pro as controller for testing Grok
-python3 promptmap2.py --target-model grok-beta --target-model-type xai \
-  --controller-model gemini-2.5-pro --controller-model-type google
+```
+## Black-Box Testing
+
+If you do not control the target LLM’s system prompt, you can still attack it by providing an HTTP request schema. Set `--target-model-type http` and supply `--http-config` pointing to a YAML file that describes how to send each payload. Key fields:
+
+- `url`: Destination for the request. For example: `https://assistant.example.com/chat`
+- `method`: HTTP verb, defaults to `POST`.
+- `headers`: You can add any headers you want. For example: `Content-Type: application/json`, `Authorization: Bearer <token>`
+- `payload_placeholder`: Attack prompt will be inserted here (multiple positions are supported): `"{PAYLOAD_POSITION}"`
+- `payload_encoding`: Can be `none`, `url`, or `form` to control how payloads are encoded before insertion.
+- `json` or `body`: Define the request payload. 
+- `verify_ssl`: Set to `true` to enable TLS verification (defaults to disabled for convenience when intercepting traffic).
+- `proxy`: Optional proxy configuration (`scheme`, `host`, `port`, and optional credentials) used for both HTTP/HTTPS traffic.
+- `answer_focus_hint`: Optional string snippet that pinpoints where the assistant's answer lives inside noisy HTTP responses.
+
+Example JSON request (see `http-examples/http-config-example.yaml`):
+
+```yaml
+name: Example External Chat Endpoint
+method: POST
+url: https://chat.example.com/v1/messages
+headers:
+  Content-Type: application/json
+json:
+  messages:
+    - role: user
+      content: "{PAYLOAD_POSITION}"
+answer_focus_hint: '"content": "{ANSWER_POSITION}"'
+proxy:
+  scheme: https
+  host: 127.0.0.1
+  port: 8080
+```
+
+Example classic POST request with payload encoding (`http-examples/http-config-form.yaml`):
+
+```yaml
+name: Form Endpoint
+method: POST
+url: https://legacy.example.com/api/submit
+headers:
+  Content-Type: application/x-www-form-urlencoded
+payload_encoding: form
+body: "username=qa_tester&payload={PAYLOAD_POSITION}&mode=probe"
+answer_focus_hint: '"message={ANSWER_POSITION}"'
+```
+
+promptmap2 replaces every `{PAYLOAD_POSITION}` entry with the current attack prompt, issues the HTTP request, and feeds the response body back into the controller LLM for evaluation. When `answer_focus_hint` is provided, the evaluator LLM is instructed to focus on that slice of the response. 
+
+```bash
+python3 promptmap2.py --target-model external --target-model-type http \
+  --http-config http-examples/http-config-example.yaml \
+  --controller-model gpt-4 --controller-model-type openai
 ```
 
 ### Advanced Options
@@ -175,7 +211,7 @@ python3 promptmap2.py --target-model gpt-4 --target-model-type openai --rule-typ
 # Available rule types: distraction, prompt_stealing, jailbreak, harmful, hate, social_bias
 ```
 
-### Firewall Testing Mode
+## Firewall Testing Mode
 
 In some instances, a firewall LLM can be positioned in front of the primary LLM to identify and block malicious prompts. By using the “firewall” mode, you can specifically assess the performance of your firewall LLM.
 
