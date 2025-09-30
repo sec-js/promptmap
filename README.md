@@ -14,7 +14,7 @@ promptmap2 is a an automated prompt injection scanner for custom LLM application
 
 - **White-box testing:** Provide your system prompts and the model information. promptmap2 runs the target LLM itself and tests it.
 
-- **Black-box testing:** Point promptmap2 at an external HTTP endpoint. It sends attack prompts over HTTPand inspects the returned outputs.
+- **Black-box testing:** Point promptmap2 at an external HTTP endpoint. It sends attack prompts over HTTP and inspects the returned outputs.
 
 It operates using a dual-LLM architecture:
 
