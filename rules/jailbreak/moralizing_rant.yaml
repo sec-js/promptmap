@@ -1,4 +1,5 @@
 name: moralizing_rant
+source: https://github.com/alexalbertt/jailbreakchat
 type: jailbreak
 severity: high
 prompt: |

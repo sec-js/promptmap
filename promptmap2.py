@@ -1,3 +1,8 @@
+import warnings
+warnings.filterwarnings(
+    "ignore",
+    message=r"^urllib3 v2 only supports OpenSSL 1\.1\.1\+"
+)
 import argparse
 import os
 import json
